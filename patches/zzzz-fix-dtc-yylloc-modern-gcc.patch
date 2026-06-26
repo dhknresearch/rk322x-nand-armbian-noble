@@ -1,0 +1,43 @@
+From e33a814e772cdc36436c8c188d8c42d019fda639 Mon Sep 17 00:00:00 2001
+From: Dirk Mueller <dmueller@suse.com>
+Date: Tue, 14 Jan 2020 18:53:41 +0100
+Subject: [PATCH] scripts/dtc: remove redundant YYLOC global declaration
+
+Modern GCC defaults to -fno-common.  The DTC lexer and parser both define
+`yylloc`, which then fails at link time with a multiple-definition error.
+The parser header already declares the symbol, so the lexer declaration is
+redundant and should be removed.
+
+The Rockchip 4.4 vendor tree builds the pre-generated lexer as well as
+shipping the Flex source, so apply the same deletion to both files.
+
+Upstream commit: e33a814e772cdc36436c8c188d8c42d019fda639
+---
+ scripts/dtc/dtc-lexer.l             | 1 -
+ scripts/dtc/dtc-lexer.lex.c_shipped | 1 -
+ 2 files changed, 2 deletions(-)
+
+diff --git a/scripts/dtc/dtc-lexer.l b/scripts/dtc/dtc-lexer.l
+--- a/scripts/dtc/dtc-lexer.l
++++ b/scripts/dtc/dtc-lexer.l
+@@ -38,7 +38,6 @@ LINECOMMENT "//".*\n
+ #include "srcpos.h"
+ #include "dtc-parser.tab.h"
+ 
+-YYLTYPE yylloc;
+ extern bool treesource_error;
+ 
+ /* CAUTION: this will stop working if we ever use yyless() or yyunput() */
+diff --git a/scripts/dtc/dtc-lexer.lex.c_shipped b/scripts/dtc/dtc-lexer.lex.c_shipped
+--- a/scripts/dtc/dtc-lexer.lex.c_shipped
++++ b/scripts/dtc/dtc-lexer.lex.c_shipped
+@@ -637,7 +637,6 @@ char *yytext;
+ #include "srcpos.h"
+ #include "dtc-parser.tab.h"
+ 
+-YYLTYPE yylloc;
+ extern bool treesource_error;
+ 
+ /* CAUTION: this will stop working if we ever use yyless() or yyunput() */
+-- 
+2.43.0

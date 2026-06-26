@@ -1,0 +1,6 @@
+# RK322X fixture
+BOARD_NAME="rk322x-box"
+BOARDFAMILY="rockchip"
+KERNEL_TARGET="current,edge"
+KERNEL_TEST_TARGET="current"
+BOOT_SOC="rk322x"

@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -u
+
+MAX_CPU_KHZ=1200000
+CPU_GOVERNOR=ondemand
+READ_AHEAD_KB=128
+[[ -r /etc/default/rk322x-tune ]] && . /etc/default/rk322x-tune
+
+log() { printf 'rk322x-tune: %s\n' "$*"; }
+write_if_possible() {
+    local value="$1" file="$2"
+    [[ -w "$file" ]] || return 0
+    printf '%s' "$value" > "$file" 2>/dev/null || true
+}
+
+choose_frequency() {
+    local target="$1" available="$2" best=0 f
+    for f in $available; do
+        [[ "$f" =~ ^[0-9]+$ ]] || continue
+        if (( f <= target && f > best )); then best="$f"; fi
+    done
+    if (( best == 0 )); then
+        for f in $available; do
+            [[ "$f" =~ ^[0-9]+$ ]] || continue
+            if (( best == 0 || f < best )); then best="$f"; fi
+        done
+    fi
+    printf '%s' "$best"
+}
+
+shopt -s nullglob
+cpufreq_dirs=(/sys/devices/system/cpu/cpufreq/policy* /sys/devices/system/cpu/cpu0/cpufreq)
+declare -A seen=()
+for dir in "${cpufreq_dirs[@]}"; do
+    [[ -d "$dir" ]] || continue
+    real="$(readlink -f "$dir")"
+    [[ -n "${seen[$real]:-}" ]] && continue
+    seen[$real]=1
+
+    if [[ -r "$dir/scaling_available_governors" ]] && \
+       grep -qw "$CPU_GOVERNOR" "$dir/scaling_available_governors"; then
+        write_if_possible "$CPU_GOVERNOR" "$dir/scaling_governor"
+    fi
+
+    available=""
+    [[ -r "$dir/scaling_available_frequencies" ]] && \
+        available="$(cat "$dir/scaling_available_frequencies")"
+    if [[ -n "$available" ]]; then
+        selected="$(choose_frequency "$MAX_CPU_KHZ" "$available")"
+        [[ "$selected" =~ ^[0-9]+$ ]] && \
+            write_if_possible "$selected" "$dir/scaling_max_freq"
+    elif [[ -r "$dir/cpuinfo_max_freq" ]]; then
+        hardware_max="$(cat "$dir/cpuinfo_max_freq")"
+        selected="$MAX_CPU_KHZ"
+        (( selected > hardware_max )) && selected="$hardware_max"
+        write_if_possible "$selected" "$dir/scaling_max_freq"
+    fi
+
+done
+
+# Make ondemand react quickly enough for XFCE, then drop back when idle.
+for file in \
+    /sys/devices/system/cpu/cpufreq/ondemand/up_threshold \
+    /sys/devices/system/cpu/cpu0/cpufreq/ondemand/up_threshold; do
+    write_if_possible 80 "$file"
+done
+for file in \
+    /sys/devices/system/cpu/cpufreq/ondemand/sampling_down_factor \
+    /sys/devices/system/cpu/cpu0/cpufreq/ondemand/sampling_down_factor; do
+    write_if_possible 2 "$file"
+done
+
+# Avoid huge read-ahead allocations and select a latency-friendly scheduler
+# only when the kernel/device actually exposes it.
+for queue in /sys/block/mmcblk*/queue /sys/block/rknand*/queue /sys/block/nand*/queue; do
+    [[ -d "$queue" ]] || continue
+    write_if_possible "$READ_AHEAD_KB" "$queue/read_ahead_kb"
+    if [[ -r "$queue/scheduler" && -w "$queue/scheduler" ]]; then
+        schedulers="$(cat "$queue/scheduler")"
+        if grep -qw deadline <<<"$schedulers"; then
+            write_if_possible deadline "$queue/scheduler"
+        elif grep -qw none <<<"$schedulers"; then
+            write_if_possible none "$queue/scheduler"
+        elif grep -qw noop <<<"$schedulers"; then
+            write_if_possible noop "$queue/scheduler"
+        fi
+    fi
+done
+
+log "governor=$CPU_GOVERNOR max_cpu_khz=$MAX_CPU_KHZ read_ahead_kb=$READ_AHEAD_KB"
+exit 0

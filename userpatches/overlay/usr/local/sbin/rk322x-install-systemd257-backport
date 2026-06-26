@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+BACKPORT_VERSION="${RK322X_SYSTEMD_BACKPORT_VERSION:-257.9-0ubuntu2.5}"
+BACKPORT_SUITE="${RK322X_SYSTEMD_BACKPORT_SUITE:-questing}"
+ARCH="${RK322X_SYSTEMD_BACKPORT_ARCH:-armhf}"
+SOURCE_FILE=/etc/apt/sources.list.d/zz-rk322x-systemd257.sources
+TEMP_PIN=/etc/apt/preferences.d/00-rk322x-systemd257-build
+FINAL_PIN=/etc/apt/preferences.d/99-rk322x-systemd257
+MANIFEST=/etc/rk322x-resolute-systemd-backport
+
+core_packages=(
+    systemd
+    systemd-sysv
+    udev
+    libsystemd-shared
+    libsystemd0
+    libudev1
+    libpam-systemd
+    libnss-systemd
+)
+optional_packages=(
+    libnss-myhostname
+    libnss-mymachines
+    systemd-container
+    systemd-cryptsetup
+    systemd-homed
+    systemd-journal-remote
+    systemd-oomd
+    systemd-resolved
+    systemd-timesyncd
+    systemd-userdbd
+)
+
+log() { printf 'rk322x-systemd257-backport: %s\n' "$*"; }
+die() { log "ERROR: $*" >&2; exit 1; }
+# Do not inherit a dead LAN apt-cacher from the build host or rootfs cache.
+APT_DIRECT_OPTS=(
+    -o Acquire::http::Proxy=DIRECT
+    -o Acquire::https::Proxy=DIRECT
+    -o Acquire::Retries=3
+)
+
+if [[ "${1:-}" == "--print-plan" ]]; then
+    printf 'version=%s\nsuite=%s\narch=%s\n' "$BACKPORT_VERSION" "$BACKPORT_SUITE" "$ARCH"
+    printf 'core=%s\n' "${core_packages[*]}"
+    printf 'optional=%s\n' "${optional_packages[*]}"
+    exit 0
+fi
+
+(( EUID == 0 )) || die 'must run as root'
+[[ "$(dpkg --print-architecture)" == "$ARCH" ]] || \
+    die "expected architecture $ARCH, found $(dpkg --print-architecture)"
+command -v apt-get >/dev/null || die 'apt-get is missing'
+command -v apt-cache >/dev/null || die 'apt-cache is missing'
+
+cleanup_build_source() {
+    rm -f "$SOURCE_FILE" "$TEMP_PIN"
+}
+trap cleanup_build_source EXIT
+
+write_source() {
+    local uri="$1"
+    cat > "$SOURCE_FILE" <<EOF_SOURCE
+Types: deb
+URIs: ${uri}
+Suites: ${BACKPORT_SUITE} ${BACKPORT_SUITE}-updates ${BACKPORT_SUITE}-security
+Components: main
+Architectures: ${ARCH}
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF_SOURCE
+}
+
+write_source https://ports.ubuntu.com/ubuntu-ports
+
+# Keep the temporary older suite from satisfying unrelated dependencies. Only
+# exact systemd-source binaries selected below receive a high priority.
+cat > "$TEMP_PIN" <<EOF_PIN
+Package: *
+Pin: release n=${BACKPORT_SUITE}
+Pin-Priority: 1
+
+Package: systemd systemd-* udev libudev* libsystemd* libpam-systemd libnss-systemd libnss-myhostname libnss-mymachines
+Pin: version ${BACKPORT_VERSION}
+Pin-Priority: 1001
+EOF_PIN
+
+log "refreshing signed ${BACKPORT_SUITE} package metadata"
+if ! apt-get "${APT_DIRECT_OPTS[@]}" update; then
+    log "ports archive failed; retrying the signed Ubuntu old-releases archive"
+    write_source https://old-releases.ubuntu.com/ubuntu
+    apt-get "${APT_DIRECT_OPTS[@]}" update
+fi
+
+selected=("${core_packages[@]}")
+for package in "${optional_packages[@]}"; do
+    if dpkg-query -W -f='${db:Status-Status}\n' "$package" 2>/dev/null | grep -qx installed; then
+        selected+=("$package")
+    fi
+done
+
+# De-duplicate while preserving order.
+declare -A seen=()
+unique=()
+for package in "${selected[@]}"; do
+    [[ -n "${seen[$package]:-}" ]] && continue
+    seen[$package]=1
+    unique+=("$package")
+done
+selected=("${unique[@]}")
+
+specs=()
+missing=()
+for package in "${selected[@]}"; do
+    if apt-cache "${APT_DIRECT_OPTS[@]}" madison "$package" | awk -v wanted="$BACKPORT_VERSION" '$3 == wanted { found=1 } END { exit !found }'; then
+        specs+=("${package}=${BACKPORT_VERSION}")
+    else
+        missing+=("$package")
+    fi
+done
+
+if ((${#missing[@]})); then
+    die "exact ${BACKPORT_VERSION} package(s) unavailable: ${missing[*]}"
+fi
+
+apt-mark unhold "${selected[@]}" >/dev/null 2>&1 || true
+log "installing matched systemd/udev stack: ${selected[*]}"
+DEBIAN_FRONTEND=noninteractive apt-get "${APT_DIRECT_OPTS[@]}" install -y \
+    --allow-downgrades \
+    --allow-change-held-packages \
+    --no-install-recommends \
+    "${specs[@]}"
+
+bad=()
+for package in "${selected[@]}"; do
+    installed="$(dpkg-query -W -f='${Version}' "$package" 2>/dev/null || true)"
+    [[ "$installed" == "$BACKPORT_VERSION" ]] || bad+=("${package}=${installed:-missing}")
+done
+((${#bad[@]} == 0)) || die "version verification failed: ${bad[*]}"
+
+{
+    printf '# RK322x Resolute/Linux-4.4 systemd compatibility backport\n'
+    printf 'Package: %s\n' "${selected[*]}"
+    printf 'Pin: version %s\n' "$BACKPORT_VERSION"
+    printf 'Pin-Priority: 1001\n\n'
+    printf 'Package: %s\n' "${selected[*]}"
+    printf 'Pin: version *\n'
+    printf 'Pin-Priority: -1\n'
+} > "$FINAL_PIN"
+
+apt-mark hold "${selected[@]}" >/dev/null
+cat > "$MANIFEST" <<EOF_MANIFEST
+profile=Ubuntu Resolute 26.04 on RK322x Linux 4.4
+systemd_backport_version=${BACKPORT_VERSION}
+source_suite=${BACKPORT_SUITE}
+architecture=${ARCH}
+packages=${selected[*]}
+cgroup_mode=legacy-v1-forced
+EOF_MANIFEST
+
+# Keep a disabled repair source in the image without exposing the older suite
+# during normal upgrades.
+cp "$SOURCE_FILE" /etc/apt/sources.list.d/rk322x-systemd257.sources.disabled
+cleanup_build_source
+trap - EXIT
+
+log "installed and pinned systemd ${BACKPORT_VERSION}"

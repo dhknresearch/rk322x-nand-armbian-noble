@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+log() { printf 'rk322x-desktop-recover: %s\n' "$*"; }
+
+if (( EUID != 0 )); then
+    echo "Run as root" >&2
+    exit 1
+fi
+
+force=no
+if [[ "${1:-}" == "--force" ]]; then
+    force=yes
+fi
+
+# Do not compete with Armbian's initial account-creation wizard. The marker is
+# removed as soon as a normal user is successfully created. If setup then hangs
+# in its network/locale phase, the next boot safely continues here.
+if [[ -e /root/.not_logged_in_yet && "$force" != yes ]]; then
+    log "first-login wizard is still active; leaving the console in control"
+    exit 0
+fi
+
+desktop_user="$(awk -F: '$3 >= 1000 && $3 < 60000 && $1 != "nobody" { print $1; exit }' /etc/passwd)"
+if [[ -z "$desktop_user" ]]; then
+    log "no normal user exists yet; nothing to repair"
+    exit 0
+fi
+
+missing=0
+for path in /usr/sbin/lightdm /usr/bin/startxfce4 /usr/share/xsessions/xfce.desktop; do
+    if [[ ! -e "$path" ]]; then
+        log "missing desktop component: $path"
+        missing=1
+    fi
+done
+if (( missing != 0 )); then
+    log "install/reinstall XFCE and LightDM, then run this command again"
+    exit 2
+fi
+
+install -d -m 0755 /etc/lightdm/lightdm.conf.d /etc/X11/xorg.conf.d /var/lib/rk322x
+cat > /etc/lightdm/lightdm.conf.d/11-rk322x.conf <<'EOF_LIGHTDM'
+[Seat:*]
+greeter-session=lightdm-gtk-greeter
+user-session=xfce
+allow-guest=false
+EOF_LIGHTDM
+
+printf '%s\n' /usr/sbin/lightdm > /etc/X11/default-display-manager
+ln -sfn /lib/systemd/system/lightdm.service /etc/systemd/system/display-manager.service
+systemctl unmask lightdm.service >/dev/null 2>&1 || true
+systemctl enable lightdm.service >/dev/null
+systemctl set-default graphical.target >/dev/null
+systemctl daemon-reload
+systemctl restart lightdm.service || true
+sleep 4
+
+if ! systemctl is-active --quiet lightdm.service; then
+    # The legacy RK322x display path may expose only /dev/fb0. Use fbdev only
+    # as a fallback after the normal Xorg path failed; do not force it on boxes
+    # where modesetting already works.
+    if [[ -e /dev/fb0 && -e /usr/lib/xorg/modules/drivers/fbdev_drv.so ]]; then
+        log "normal Xorg startup failed; enabling /dev/fb0 fallback"
+        cat > /etc/X11/xorg.conf.d/20-rk322x-fbdev.conf <<'EOF_XORG'
+Section "Device"
+    Identifier "RK322x framebuffer"
+    Driver "fbdev"
+    Option "fbdev" "/dev/fb0"
+EndSection
+EOF_XORG
+        systemctl restart lightdm.service || true
+        sleep 4
+    fi
+fi
+
+if systemctl is-active --quiet lightdm.service; then
+    touch /var/lib/rk322x/desktop-recovered
+    log "LightDM is active; graphical boot restored for user $desktop_user"
+    exit 0
+fi
+
+log "LightDM still failed"
+systemctl --no-pager --full status lightdm.service || true
+journalctl -b -u lightdm.service --no-pager -n 80 || true
+exit 1

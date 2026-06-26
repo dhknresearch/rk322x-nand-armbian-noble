@@ -1,0 +1,14 @@
+# Tuned for a 1 GB RK322x desktop.
+# The zram device is sparse: this is a virtual size, not reserved RAM.
+ENABLED=true
+SWAP=true
+ZRAM_PERCENTAGE=75
+MEM_LIMIT_PERCENTAGE=45
+ZRAM_MAX_DEVICES=1
+SWAP_ALGORITHM=lzo
+SWAP_PRIORITY=100
+
+# Keep temporary writes off NAND. Memory is consumed only for data written.
+TMP_ALGORITHM=lzo
+TMP_SIZE=256M
+RAMLOG_ALGORITHM=lzo

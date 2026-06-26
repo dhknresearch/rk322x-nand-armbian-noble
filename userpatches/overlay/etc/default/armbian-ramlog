@@ -1,0 +1,5 @@
+# Journald is configured as volatile and capped separately.
+# Do not reserve another large RAM-backed /var/log on a 1 GB box.
+ENABLED=false
+SIZE=16M
+USE_RSYNC=false

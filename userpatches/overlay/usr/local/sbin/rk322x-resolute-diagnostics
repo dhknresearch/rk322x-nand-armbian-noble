@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -u
+
+out=/boot/rk322x-resolute-diagnostics.txt
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+{
+    echo 'RK322x Resolute/Linux-4.4 boot diagnostics'
+    printf 'generated='; date --iso-8601=seconds 2>/dev/null || date
+    echo
+    echo '== kernel =='
+    uname -a
+    printf 'cmdline: '; cat /proc/cmdline
+    echo
+    echo '== compatibility manifest =='
+    cat /etc/rk322x-resolute-systemd-backport 2>/dev/null || echo missing
+    echo
+    echo '== systemd =='
+    systemd --version 2>&1 || true
+    systemctl is-system-running 2>&1 || true
+    systemctl --failed --no-pager --full 2>&1 || true
+    echo
+    echo '== cgroups =='
+    cat /proc/cgroups 2>/dev/null || true
+    findmnt -t cgroup,cgroup2 2>/dev/null || mount | grep -E 'cgroup|cgroup2' || true
+    echo
+    echo '== display manager =='
+    systemctl status lightdm.service --no-pager --full 2>&1 || true
+    echo
+    echo '== boot warnings =='
+    journalctl -b -p warning --no-pager -n 160 2>&1 || true
+} > "$tmp"
+install -m 0644 "$tmp" "$out"

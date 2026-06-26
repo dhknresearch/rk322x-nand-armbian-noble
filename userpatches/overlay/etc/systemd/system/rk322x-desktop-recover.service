@@ -1,0 +1,13 @@
+[Unit]
+Description=Recover RK322x XFCE desktop after interrupted first login
+After=multi-user.target systemd-user-sessions.service
+ConditionPathExists=/usr/sbin/lightdm
+ConditionPathExists=/usr/bin/startxfce4
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rk322x-desktop-recover
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

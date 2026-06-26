@@ -1,0 +1,5 @@
+# Conservative default for poorly cooled 1 GB TV boxes.
+# The service chooses the highest available OPP not exceeding this value.
+MAX_CPU_KHZ=1200000
+CPU_GOVERNOR=ondemand
+READ_AHEAD_KB=128

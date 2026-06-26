@@ -1,0 +1,11 @@
+[Unit]
+Description=Record RK322x Resolute/Linux-4.4 compatibility diagnostics
+After=multi-user.target lightdm.service
+ConditionPathExists=/etc/rk322x-resolute-systemd-backport
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rk322x-resolute-diagnostics
+
+[Install]
+WantedBy=multi-user.target

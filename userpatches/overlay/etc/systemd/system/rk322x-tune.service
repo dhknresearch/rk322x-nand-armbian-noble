@@ -1,0 +1,12 @@
+[Unit]
+Description=Conservative RK322x thermal and I/O tuning
+After=systemd-modules-load.service
+ConditionPathExists=/sys/devices/system/cpu
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rk322x-tune
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
