@@ -20,4 +20,4 @@ I made this because I had recently received a RK3229 tvbox from a friend. It is 
 - Step 7: Shutdown, turn on and setup Armbian
 - Step 8: Enjoy
 
-Feel free to create issues and help me to fix this. Thank to @thinhx2 to mention the nand legacy problem and @jock for his previous work on legacy kernel Armbian for RK322x.
+Feel free to create issues and help me to fix this. Thank to @thinhx2 for mentioned the nand legacy problem and some useful advices and @jock for his previous work on legacy kernel Armbian for RK322x.
