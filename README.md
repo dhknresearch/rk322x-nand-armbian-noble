@@ -4,7 +4,7 @@ A weird project by me. The main objective is to bring up Armbian Noble to some R
 I made this because I had recently received a RK3229 tvbox from a friend. It is nand version and the latest Armbian build I could find that booted is 21.08. But i need newer Armbian so that why I tried to build Armbian 26.08 based on Ubuntu Noble with legacy kernel 4.4.194 and somehow it worked. I did include xfce in this because I need GUI. Remember, this is for RK322x nand device only.
 
 **Some screenshot:**
-<img width="1280" height="720" alt="Screenshot_1" src="https://github.com/user-attachments/assets/dc1d1003-c1ca-4825-a058-9ccaa8ac8cc8" />
+<img width="1280" height="560" alt="Screenshot_1" src="https://github.com/user-attachments/assets/a878d17d-c1c2-4a45-82ca-12a2e5236773" />
 <img width="1280" height="720" alt="Screenshot_2" src="https://github.com/user-attachments/assets/e2658f9f-40b7-427c-94aa-b1cdc45f4baa" />
 
 **What is working:**
