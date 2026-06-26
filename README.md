@@ -44,5 +44,5 @@ I made this because I had recently received a RK3229 tvbox from a friend. It is 
 
 
 
-Feel free to create issues and help me to fix this. Thank to @thinhx2 for mentioned the nand legacy problem and some useful advices and @jock for his previous work on legacy kernel Armbian for RK322x.
+Feel free to create issues and help me to fix this. Thank to @thinhx2 for mentioned the nand legacy problem and some useful advices and @jock for his previous work on legacy kernel Armbian for RK322x. Also thank to Armbian community for the RK322x official build that I used as base for this build.
 
